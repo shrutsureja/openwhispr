@@ -20,6 +20,7 @@ const PLACEHOLDER_KEYS = {
   openai: "your_openai_api_key_here",
   groq: "your_groq_api_key_here",
   mistral: "your_mistral_api_key_here",
+  gemini: "your_gemini_api_key_here",
 };
 
 const isValidApiKey = (key, provider = "openai") => {
@@ -541,7 +542,12 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         result = await this.processWithOpenWhisprCloud(audioBlob, metadata);
       } else {
         activeModel = this.getTranscriptionModel();
-        result = await this.processWithOpenAIAPI(audioBlob, metadata);
+        const cloudProvider = s.cloudTranscriptionProvider || "openai";
+        if (cloudProvider === "gemini") {
+          result = await this.processWithGeminiTranscription(audioBlob, metadata);
+        } else {
+          result = await this.processWithOpenAIAPI(audioBlob, metadata);
+        }
       }
 
       if (!this.isProcessing) {
@@ -828,6 +834,15 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
       }
       if (!isValidApiKey(apiKey, "mistral")) {
         throw new Error("Mistral API key not found. Please set your API key in the Control Panel.");
+      }
+    } else if (provider === "gemini") {
+      // Prefer store value (user-entered via UI) over main process (.env)
+      apiKey = s.geminiApiKey;
+      if (!isValidApiKey(apiKey, "gemini")) {
+        apiKey = await window.electronAPI.getGeminiKey?.();
+      }
+      if (!isValidApiKey(apiKey, "gemini")) {
+        throw new Error("Gemini API key not found. Please set your API key in the Control Panel.");
       }
     } else if (provider === "groq") {
       // Prefer store value (user-entered via UI) over main process (.env)
@@ -1746,6 +1761,151 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
     }
   }
 
+  async processWithGeminiTranscription(audioBlob, metadata = {}) {
+    const timings = {};
+    const apiSettings = getSettings();
+    const language = getBaseLanguageCode(apiSettings.preferredLanguage);
+
+    const model = this.getTranscriptionModel();
+    const apiKey = await this.getAPIKey();
+
+    logger.debug(
+      "Gemini transcription request starting",
+      {
+        model,
+        blobSize: audioBlob.size,
+        blobType: audioBlob.type,
+        language,
+      },
+      "transcription"
+    );
+
+    const apiCallStart = performance.now();
+
+    // Convert audio blob to base64 using chunked approach to handle large files efficiently
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const CHUNK_SIZE = 65536;
+    let binary = "";
+    for (let i = 0; i < uint8Array.length; i += CHUNK_SIZE) {
+      const chunk = uint8Array.subarray(i, i + CHUNK_SIZE);
+      binary += String.fromCharCode(...chunk);
+    }
+    const base64Audio = btoa(binary);
+
+    const mimeType = audioBlob.type || "audio/webm";
+
+    // Build the transcription prompt, including language hint when available
+    let transcriptionInstruction =
+      "Transcribe the speech in this audio exactly. Return only the transcribed text, nothing else.";
+    if (language && language !== "auto") {
+      transcriptionInstruction = `Transcribe the speech in this audio exactly. The language spoken is ${language}. Return only the transcribed text, nothing else.`;
+    }
+
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Audio,
+              },
+            },
+            {
+              text: transcriptionInstruction,
+            },
+          ],
+        },
+      ],
+    };
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    logger.debug(
+      "Making Gemini transcription API request",
+      { endpoint, model, mimeType },
+      "transcription"
+    );
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      logger.debug(
+        "Gemini transcription API response received",
+        { status: response.status, ok: response.ok },
+        "transcription"
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error(
+          "Gemini transcription API error",
+          { status: response.status, errorText },
+          "transcription"
+        );
+        throw new Error(`Gemini API Error: ${response.status} ${errorText}`);
+      }
+
+      const jsonResponse = await response.json();
+
+      const candidate = jsonResponse?.candidates?.[0];
+      const transcribedText = candidate?.content?.parts?.[0]?.text;
+
+      if (!transcribedText || transcribedText.trim().length === 0) {
+        logger.error(
+          "Gemini transcription returned empty response",
+          { jsonResponse },
+          "transcription"
+        );
+        throw new Error(
+          "No text transcribed - Gemini response was empty. Check audio input."
+        );
+      }
+
+      timings.transcriptionProcessingDurationMs = Math.round(performance.now() - apiCallStart);
+      const rawText = transcribedText.trim();
+      const reasoningStart = performance.now();
+      const text = await this.processTranscription(rawText, "gemini");
+      timings.reasoningProcessingDurationMs = Math.round(performance.now() - reasoningStart);
+
+      const source = (await this.isReasoningAvailable()) ? "gemini-reasoned" : "gemini";
+
+      logger.debug(
+        "Gemini transcription successful",
+        {
+          originalLength: rawText.length,
+          processedLength: text.length,
+          source,
+          timings,
+        },
+        "transcription"
+      );
+
+      return { success: true, text, rawText, source, timings };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === "AbortError") {
+        throw new Error("Gemini transcription request timed out after 60s");
+      }
+      throw error;
+    }
+  }
+
+
   getTranscriptionModel() {
     try {
       const s = getSettings();
@@ -1762,6 +1922,7 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         const isGroqModel = trimmedModel.startsWith("whisper-large-v3");
         const isOpenAIModel = trimmedModel.startsWith("gpt-4o") || trimmedModel === "whisper-1";
         const isMistralModel = trimmedModel.startsWith("voxtral-");
+        const isGeminiModel = trimmedModel.startsWith("gemini-");
 
         if (provider === "groq" && isGroqModel) {
           return trimmedModel;
@@ -1772,12 +1933,16 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         if (provider === "mistral" && isMistralModel) {
           return trimmedModel;
         }
+        if (provider === "gemini" && isGeminiModel) {
+          return trimmedModel;
+        }
         // Model doesn't match provider - fall through to default
       }
 
       // Return provider-appropriate default
       if (provider === "groq") return "whisper-large-v3-turbo";
       if (provider === "mistral") return "voxtral-mini-latest";
+      if (provider === "gemini") return "gemini-2.5-flash-preview-native-audio-dialog";
       return "gpt-4o-mini-transcribe";
     } catch (error) {
       return "gpt-4o-mini-transcribe";
@@ -1824,6 +1989,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
         base = API_ENDPOINTS.GROQ_BASE;
       } else if (currentProvider === "mistral") {
         base = API_ENDPOINTS.MISTRAL_BASE;
+      } else if (currentProvider === "gemini") {
+        // Gemini uses a completely different API — return a sentinel value
+        // so callers know to use processWithGeminiTranscription instead.
+        return "gemini";
       } else {
         // OpenAI or other standard providers
         base = API_ENDPOINTS.TRANSCRIPTION_BASE;
