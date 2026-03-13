@@ -563,9 +563,15 @@
     "noMoreMeetings": "No more meetings today",
     "now": "Now",
     "join": "Join",
-    "untitledEvent": "Untitled event",
+    "untitledEvent": "Untitled Event",
     "screenRecordingRequired": "System Audio permission is needed to capture other participants' audio.",
-    "openSettings": "Open System Settings"
+    "openSettings": "Open System Settings",
+    "signInRequired": "Sign in to use meeting recording",
+    "signInDescription": "Create an account or sign in to record and transcribe meetings.",
+    "connectCalendar": "Connect your calendar",
+    "connectCalendarDescription": "Link your Google Calendar to see upcoming meetings and automatically record notes.",
+    "notABot": "OpenWhispr records using your system audio — it never joins meetings as a bot.",
+    "connectCalendarButton": "Connect Calendar"
   },
   "cleanupPrompt": "Cleanup",
   "developerSection": {
@@ -1411,7 +1417,8 @@
         "openai_whisper_1": "Original Whisper model",
         "groq_whisper_large_v3": "High accuracy speech recognition",
         "groq_whisper_large_v3_turbo": "216x real-time speed",
-        "mistral_voxtral_mini_latest": "Fast multilingual transcription"
+        "mistral_voxtral_mini_latest": "Fast multilingual transcription",
+        "gemini_2_5_flash_native_audio_dialog": "Google native audio transcription model"
       },
       "cloud": {
         "openai_gpt_5_2": "Latest flagship reasoning model",
@@ -1897,23 +1904,6 @@
       "title": "OpenWhispr is a meeting recorder, not a bot",
       "description": "OpenWhispr captures audio directly from your system — it never joins your meetings as a participant. Just connect your calendar and take notes as normal."
     }
-  },
-  "upcoming": {
-    "title": "Upcoming Meetings",
-    "transcriptions": "Transcriptions",
-    "tomorrow": "Tomorrow",
-    "noMoreMeetings": "No more meetings today",
-    "now": "Now",
-    "join": "Join",
-    "untitledEvent": "Untitled Event",
-    "screenRecordingRequired": "System Audio permission is needed to capture other participants' audio.",
-    "openSettings": "Open System Settings",
-    "signInRequired": "Sign in to use meeting recording",
-    "signInDescription": "Create an account or sign in to record and transcribe meetings.",
-    "connectCalendar": "Connect your calendar",
-    "connectCalendarDescription": "Link your Google Calendar to see upcoming meetings and automatically record notes.",
-    "notABot": "OpenWhispr records using your system audio — it never joins meetings as a bot.",
-    "connectCalendarButton": "Connect Calendar"
   },
   "notesView": {
     "searchPlaceholder": "Search notes…",
