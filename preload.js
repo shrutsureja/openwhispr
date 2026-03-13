@@ -493,6 +493,28 @@ contextBridge.exposeInMainWorld("electronAPI", {
     (callback) => (_event, data) => callback(data)
   ),
 
+  // Gemini Live streaming (BYOK dictation)
+  geminiLiveWarmup: (options) => ipcRenderer.invoke("gemini-live-warmup", options),
+  geminiLiveStart: (options) => ipcRenderer.invoke("gemini-live-start", options),
+  geminiLiveSend: (buffer) => ipcRenderer.send("gemini-live-send", buffer),
+  geminiLiveStop: () => ipcRenderer.invoke("gemini-live-stop"),
+  onGeminiLivePartial: registerListener(
+    "gemini-live-partial",
+    (callback) => (_event, data) => callback(data)
+  ),
+  onGeminiLiveFinal: registerListener(
+    "gemini-live-final",
+    (callback) => (_event, data) => callback(data)
+  ),
+  onGeminiLiveError: registerListener(
+    "gemini-live-error",
+    (callback) => (_event, data) => callback(data)
+  ),
+  onGeminiLiveSessionEnd: registerListener(
+    "gemini-live-session-end",
+    (callback) => (_event, data) => callback(data)
+  ),
+
   // Usage limit events (for showing UpgradePrompt in ControlPanel)
   notifyLimitReached: (data) => ipcRenderer.send("limit-reached", data),
   onLimitReached: registerListener("limit-reached", (callback) => (_event, data) => callback(data)),

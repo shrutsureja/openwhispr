@@ -10,6 +10,7 @@ const AssemblyAiStreaming = require("./assemblyAiStreaming");
 const { i18nMain, changeLanguage } = require("./i18nMain");
 const DeepgramStreaming = require("./deepgramStreaming");
 const OpenAIRealtimeStreaming = require("./openaiRealtimeStreaming");
+const GeminiLiveStreaming = require("./geminiLiveStreaming");
 const AudioStorageManager = require("./audioStorage");
 
 const MISTRAL_TRANSCRIPTION_URL = "https://api.mistral.ai/v1/audio/transcriptions";
@@ -108,6 +109,7 @@ class IPCHandlers {
     this.deepgramStreaming = null;
     this.openaiRealtimeStreaming = null;
     this._dictationStreaming = null;
+    this._geminiLiveStreaming = null;
     this._autoLearnEnabled = true; // Default on, synced from renderer
     this._autoLearnDebounceTimer = null;
     this._autoLearnLatestData = null;
@@ -2419,6 +2421,66 @@ class IPCHandlers {
       }
       const result = await this._dictationStreaming.disconnect().catch(() => ({ text: "" }));
       this._dictationStreaming = null;
+      return { success: true, text: result.text || "" };
+    });
+
+    // ── Gemini Live streaming (BYOK dictation) ──────────────────────────────
+
+    const setupGeminiLiveCallbacks = (streaming, event) => {
+      streaming.onPartialTranscript = (text) =>
+        event.sender.send("gemini-live-partial", text);
+      streaming.onFinalTranscript = (text) => event.sender.send("gemini-live-final", text);
+      streaming.onError = (err) => event.sender.send("gemini-live-error", err.message);
+      streaming.onSessionEnd = (data) =>
+        event.sender.send("gemini-live-session-end", data || {});
+    };
+
+    const connectGeminiLiveStreaming = async (event, options) => {
+      if (this._geminiLiveStreaming) {
+        await this._geminiLiveStreaming.disconnect().catch(() => {});
+        this._geminiLiveStreaming = null;
+      }
+      const apiKey = this.environmentManager.getGeminiKey();
+      if (!apiKey) throw new Error("No Gemini API key configured. Add your key in Settings.");
+      const streaming = new GeminiLiveStreaming();
+      setupGeminiLiveCallbacks(streaming, event);
+      await streaming.connect({
+        apiKey,
+        model: options.model || "gemini-live-2.5-flash-native-audio",
+      });
+      this._geminiLiveStreaming = streaming;
+    };
+
+    ipcMain.handle("gemini-live-warmup", async (event, options = {}) => {
+      try {
+        await connectGeminiLiveStreaming(event, options);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    ipcMain.handle("gemini-live-start", async (event, options = {}) => {
+      try {
+        if (!this._geminiLiveStreaming?.isConnected) {
+          await connectGeminiLiveStreaming(event, options);
+        }
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    ipcMain.on("gemini-live-send", (_event, buffer) => {
+      this._geminiLiveStreaming?.sendAudio(Buffer.from(buffer));
+    });
+
+    ipcMain.handle("gemini-live-stop", async () => {
+      if (!this._geminiLiveStreaming) {
+        return { success: true, text: "" };
+      }
+      const result = await this._geminiLiveStreaming.disconnect().catch(() => ({ text: "" }));
+      this._geminiLiveStreaming = null;
       return { success: true, text: result.text || "" };
     });
 

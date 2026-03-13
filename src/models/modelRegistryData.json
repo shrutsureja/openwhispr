@@ -159,6 +159,19 @@
           "descriptionKey": "models.descriptions.transcription.mistral_voxtral_mini_latest"
         }
       ]
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "baseUrl": "wss://generativelanguage.googleapis.com",
+      "models": [
+        {
+          "id": "gemini-live-2.5-flash-native-audio",
+          "name": "Gemini 2.5 Flash Native Audio",
+          "description": "Real-time native audio transcription",
+          "descriptionKey": "models.descriptions.transcription.gemini_live_2_5_flash_native_audio"
+        }
+      ]
     }
   ],
   "cloudProviders": [

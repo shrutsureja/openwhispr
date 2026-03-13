@@ -63,6 +63,16 @@ const STREAMING_PROVIDERS = {
     onError: (cb) => window.electronAPI.onDictationRealtimeError(cb),
     onSessionEnd: (cb) => window.electronAPI.onDictationRealtimeSessionEnd(cb),
   },
+  "gemini-live": {
+    warmup: (opts) => window.electronAPI.geminiLiveWarmup(opts),
+    start: (opts) => window.electronAPI.geminiLiveStart(opts),
+    send: (buf) => window.electronAPI.geminiLiveSend(buf),
+    stop: () => window.electronAPI.geminiLiveStop(),
+    onPartial: (cb) => window.electronAPI.onGeminiLivePartial(cb),
+    onFinal: (cb) => window.electronAPI.onGeminiLiveFinal(cb),
+    onError: (cb) => window.electronAPI.onGeminiLiveError(cb),
+    onSessionEnd: (cb) => window.electronAPI.onGeminiLiveSessionEnd(cb),
+  },
 };
 
 class AudioManager {
@@ -221,9 +231,12 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
   }
 
   getStreamingProvider() {
-    const { cloudTranscriptionModel } = getSettings();
+    const { cloudTranscriptionModel, cloudTranscriptionProvider } = getSettings();
     if (REALTIME_MODELS.has(cloudTranscriptionModel)) {
       return STREAMING_PROVIDERS["openai-realtime"];
+    }
+    if (cloudTranscriptionProvider === "gemini") {
+      return STREAMING_PROVIDERS["gemini-live"];
     }
     const providerName = this.sttConfig?.streamingProvider || "deepgram";
     return STREAMING_PROVIDERS[providerName] || STREAMING_PROVIDERS.deepgram;
@@ -2009,6 +2022,10 @@ registerProcessor("pcm-streaming-processor", PCMStreamingProcessor);
       if (s.cloudTranscriptionMode === "byok") return !!s.openaiApiKey;
       if (s.cloudTranscriptionMode === "openwhispr") return !!(isSignedInOverride ?? s.isSignedIn);
       return false;
+    }
+
+    if (s.cloudTranscriptionProvider === "gemini") {
+      return !!s.geminiApiKey;
     }
 
     if (s.cloudTranscriptionMode !== "openwhispr" || !(isSignedInOverride ?? s.isSignedIn)) {
